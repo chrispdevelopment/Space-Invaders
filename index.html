@@ -1,0 +1,696 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Space Invaders</title>
+
+<link href='http://fonts.googleapis.com/css?family=Special+Elite' rel='stylesheet' type='text/css'>
+
+<style>
+/* GET RID OF BLACK DRAG/TAP SQUARE ON MOBILE */
+* {-webkit-tap-highlight-color: rgba(0,0,0,0);}
+
+body {
+	/* GET RID OF UGLY BORDERS*/
+	padding:0px;
+	border:0px;
+	margin:0px;
+	background:#178acd;
+	font-family: 'Special Elite', cursive;
+}
+
+/* DISPLAY ANIMATED GIF LOADER*/
+#loader {
+	display: none;
+}
+.loader {
+	width: 100%;
+	height: 50px;
+	position: absolute;
+	text-align:center;
+	margin-top: 250px;
+	background: url('loader.gif') no-repeat;
+	background-position: 50% 50%;
+	display: block !important;
+}
+</style>
+
+<!-- IMPORT THE JS LIBRARIES WE NEED-->
+<script src="createjs-2013.02.12.min.js" type="text/javascript"></script>
+<script src="jquery-1.9.0.min.js" type="text/javascript"></script>
+
+<script>
+
+
+	// KEYBOARD INPUT STATE
+	var isLeftDown = false;
+	var isRightDown = false;
+
+	// TELLS US WHICH CONTROL MODE WE'RE CURRENTLY IN (SWITCHES AUTOMATICALLY ON INTERACTION)
+	var isKeyboardControl = false;
+
+	// ALIEN MOVEMENT SPEED/DIRECTION
+	var direction = 5;
+
+	// HAS AN ALIEN LEFT HE EDGE (SO TURN THEM ALL AROUND)
+	var bounced = false;
+
+	// ARRAY TO STORE ALL OUR ALIENS
+	var aliens = [];
+
+	// HOW FAST/WHAT DIRECTION TO MOVE THE PLAYER
+	var playerSpeed = 0;
+	var reloadedTicks = 0;
+
+	// LOOK-UP OBJECT OF ALL OUR PRELOADED ASSETS
+	var assets = {};
+
+	var loader;
+	var backgroundBitmap;
+	var canvas;
+	var	stage;
+	var container;
+	var player;
+	var score;
+	var lives;
+	var messagefield;
+
+	function mainMenu()
+	{
+		// A CONTAINER FOR OUR WHOLE GAME, SO WE CAN SCALE IT TO FIT DEVICE
+		container = new createjs.Container();
+		stage.addChild(container);
+
+		// CREATE Background
+		backgroundBitmap = new createjs.Bitmap();
+		backgroundBitmap.image = assets.background;
+		backgroundBitmap.x = 0;
+		backgroundBitmap.y = 0;
+		backgroundBitmap.width = 400;
+		container.addChild(backgroundBitmap);
+
+		messagefield = new createjs.Text("Welcome to Space Invaders\n\n" , "35px Special Elite", "#F00");
+		messagefield.text += ("Click to play");
+		messagefield.x = 80;
+		messagefield.y = 200;
+		container.addChild(messagefield);
+
+		// SCALE CANVAS TO JUST SLIGHTLY SMALLER THAN BROWSER WINDOW
+		canvas.width = window.innerWidth - 5;
+		canvas.height = window.innerHeight - 5;
+
+		// WORK OUT SCALE THAT FITS BOTH VERTICALLY AND HORRIZONTAL
+		var scaleX = canvas.width / 480;
+		var scaleY = canvas.height / 480;
+		var scale = Math.min(scaleX, scaleY);
+
+		// SCALE THE GAME CONTAINER
+		container.scaleX = scale;
+		container.scaleY = scale;
+
+		// CENTER THE GAME CONTAINER
+		container.x = (canvas.width / 2) - (480 * scale * 0.5);
+
+		stage.update();
+
+		canvas.onclick = function()
+			{
+				canvas.onclick = null;
+				stage.removeChild(container);
+				startGame();
+			}
+	}
+
+	function startGame() {
+
+		// A CONTAINER FOR OUR WHOLE GAME, SO WE CAN SCALE IT TO FIT DEVICE
+		container = new createjs.Container();
+		stage.addChild(container);
+
+		// CREATE Background
+		backgroundBitmap = new createjs.Bitmap();
+		backgroundBitmap.image = assets.background;
+		backgroundBitmap.x = -240;
+		backgroundBitmap.y = 0;
+		backgroundBitmap.width = 480;
+		container.addChild(backgroundBitmap);
+
+		messagefield = new createjs.Text("Welcome: Click to play" , "35px Special Elite", "#F00");
+		messagefield.x = 80;
+		messagefield.y = 200;
+		//container.addChild(messagefield);
+
+		// CREATE THE PLAYER
+		player = new createjs.Container();
+		player.y = 440;
+		player.x = 240;
+		score = 0;
+		lives = 3;
+		container.addChild(player);
+
+		var playerBitmap = new createjs.Bitmap();
+		player.scaleX = player.scaleY = 0.5;
+		playerBitmap.image = assets.player;
+		playerBitmap.x = -56;
+		playerBitmap.y = -60;
+		player.addChild(playerBitmap);
+
+		//Create the onscreen text
+		var scoreText = new createjs.Text("Score: " + score , "20px Special Elite", "#F00");
+		scoreText.x = 100;
+		scoreText.y = 460;
+		container.addChild(scoreText);
+
+		var livesText = new createjs.Text("Lives: " + lives , "20px Special Elite", "#F00");
+		livesText.x = 300;
+		livesText.y = 460;
+		container.addChild(livesText);
+
+
+		// LISTEN TO KEY DOWN EVENTS AND UPDATE STATE
+		// IF A KEY IS PRESSED, SWITCH isKeyboardControl = true UNTIL WE DETECT A TOCUH
+		document.onkeydown = function(e)
+		{
+			if (e.keyCode == 37)
+			{
+				// LEFT ARROW
+				isKeyboardControl = true;
+				isLeftDown = true;
+			}
+			else if (e.keyCode == 39)
+			{
+				// RIGHT ARROW
+				isKeyboardControl = true;
+				isRightDown = true;
+			}
+			else if (e.keyCode == 32 || e.keyCode == 90 || e.keyCode == 80)
+			{
+				// SPACE, X or Z
+				isKeyboardControl = true;
+				addBullet();
+			}
+		}
+
+		// LISTEN TO KEY UP EVENTS AND UPDATE STATE
+		document.onkeyup = function(e)
+		{
+			if (e.keyCode == 37)
+			{
+				isLeftDown = false;
+			}
+			else if (e.keyCode == 39)
+			{
+				isRightDown = false;
+			}
+		}
+
+		// INITIALISE THE UPDATE ("TICK") FUNCTION
+		createjs.Ticker.setFPS(30);
+		createjs.Ticker.addListener(stage);
+
+
+		// MAIN GAME LOOP
+		stage.tick = function ()
+		{
+			reloadedTicks++;
+
+			// SET PLAYER SPEED WHEN WE'RE IN KEYBOARD MODE
+			if (isKeyboardControl)
+			{
+				if (isLeftDown)
+				{
+					playerSpeed = -5;
+				}
+				else if (isRightDown)
+				{
+					playerSpeed = 5;
+				}
+				else
+				{
+					playerSpeed = 0;
+				}
+			}
+
+			// SCALE CANVAS TO JUST SLIGHTLY SMALLER THAN BROWSER WINDOW
+			canvas.width = window.innerWidth - 5;
+			canvas.height = window.innerHeight - 5;
+
+			// WORK OUT SCALE THAT FITS BOTH VERTICALLY AND HORRIZONTAL
+			var scaleX = canvas.width / 480;
+			var scaleY = canvas.height / 480;
+			var scale = Math.min(scaleX, scaleY);
+
+			// SCALE THE GAME CONTAINER
+			container.scaleX = scale;
+			container.scaleY = scale;
+
+			// CENTER THE GAME CONTAINER
+			container.x = (canvas.width / 2) - (480 * scale * 0.5);
+
+			// POSITION THE ON-SCREEN BUTTONS
+			rightArrow.y = canvas.height - 70;
+			leftArrow.y = canvas.height - 70;
+			fireButton.y = canvas.height - 70;
+			fireButton.x = canvas.width - 80;
+
+			// RANDOMLY CHOOSE AN ALIEN TO FIRE A BULLET
+			if (Math.random() < 0.02)
+			{
+				var alienNum = Math.floor(Math.random() * aliens.length);
+				var alien = aliens[alienNum];
+				addAlienBullet(alien);
+			}
+
+			// AN ALIEN LEFT THE STAGE SO REVERSE ALIEN DIRECTION
+			if (bounced)
+			{
+				direction = -direction;
+
+				// MOVE ALL ALIENS DOWN A BIT
+				for (var i = 0; i < aliens.length; i++)
+				{
+					var alien = aliens[i];
+					alien.y += 7;
+				}
+			}
+
+			bounced = false;
+
+			// UPDATE THE PLAYER POSITION BASED ON PLAYER SPEED
+
+			player.x += playerSpeed;
+
+			// HAS THE PLAYER WON?
+			var hasWon = true;
+			for (var i = 0; i < aliens.length; i++)
+			{
+				var alien = aliens[i];
+				if (alien.visible) hasWon = false;
+			}
+
+			if (hasWon)
+			{
+				// YOU'VE WON, SO MAKE ANOTHER WAVE
+
+				score = score + 100;
+				messagefield.text = ("You have won the round\n\n");
+				messagefield.text += ("Click for next wave");
+				container.addChild(messagefield);
+				createjs.Ticker.setPaused(true);
+				canvas.onclick = function()
+				{
+					canvas.onclick = null;
+					container.removeChild(messagefield);
+					createjs.Ticker.setPaused(false);
+					player.y = 440;
+					player.x = 240;
+					stage.update()
+					createWave();
+				}
+			}
+
+			if (lives < 0)
+			{
+				endGame();
+			}
+
+			//Update onscreen text for player score and lives
+			scoreText.text = ("Score: " + score);
+			livesText.text = ("Lives: " + lives);
+
+			// DRAWS THE STAGE TO THE CANVAS - VERY IMPORTANT!! WITHOUT THIS YOU WON'T SEE ANYTHING!!
+			stage.update();
+		}
+
+		// CREATE ON-SCREEN BUTTONS
+		var leftArrow = new createjs.Bitmap();
+		leftArrow.image = assets.left;
+		leftArrow.x = 40;
+		leftArrow.y = 420;
+		stage.addChild(leftArrow);
+
+		var rightArrow = new createjs.Bitmap();
+		rightArrow.image = assets.left;
+		rightArrow.scaleX = -1;
+		rightArrow.x = 160;
+		rightArrow.y = 420;
+		stage.addChild(rightArrow);
+
+		var fireButton = new createjs.Bitmap();
+		fireButton.image = assets.fire;
+		fireButton.x = 400;
+		fireButton.y = 420;
+		stage.addChild(fireButton);
+
+		// LISTEN TO ON-SCREEN BUTTON EVENTS AND UPDATE STATE
+
+		leftArrow.onPress = function(event)
+		{
+			playerSpeed = -5;
+			isKeyboardControl = false;
+		}
+
+		rightArrow.onPress = function(event)
+		{
+			 playerSpeed = 5;
+			 isKeyboardControl = false;
+		}
+
+		fireButton.onPress = function(event)
+		{
+			isKeyboardControl = false;
+			addBullet();
+		}
+
+		// IF THE PLAYER RELEASES TOUCH ON THE LEFT OF THE SCREEN (MOVEMENT SIDE) THEN STOP MOVEMENT
+		stage.addEventListener("stagemouseup", onMouseUp);
+
+		// MAKE THE FIRST WAVE
+		createWave();
+
+		stage.update();
+	}
+
+	function onMouseUp(event)
+	{
+		if (event.stageX < canvas.width / 2)
+		{
+				playerSpeed = 0;
+		}
+	}
+
+
+
+	// CREATES A WAVE OF ALIENS
+	function createWave() {
+
+		// ROWS
+		for (var j = 0; j < 4; j++)
+		{
+			// COLLUMNS
+			for (var i = 0; i < 5; i++)
+			{
+				// CREATE SHAPE, PICK A COLOUR AND DRAW ALIEN...
+
+				var alien = new createjs.Bitmap();
+				alien.scaleX = alien.scaleY = 0.5;
+
+				if (j == 0)
+				{
+					alien.image = assets.enemy1;
+				}
+				else if (j == 1)
+				{
+					alien.image = assets.enemy2;
+				}
+				else if (j == 2)
+				{
+					alien.image = assets.enemy1;
+				}
+				else if (j == 3)
+				{
+					alien.image = assets.enemy2;
+				}
+				else if (j == 4)
+				{
+					alien.image = assets.enemy1;
+				}
+				else if (j == 5)
+				{
+					alien.image = assets.enemy2;
+				}
+
+				alien.x = 25 + (i * 55);
+				alien.y = 10 + (j * 50);
+
+				container.addChild(alien);
+				aliens.push(alien);
+
+				// EACH ALIEN'S VERY OWN TICK/UPDATE FUNCTION
+				alien.tick = function() {
+					this.x += direction;
+
+					if (this.x > 410)
+					{
+						bounced = true;
+					}
+
+					if (this.x < 20)
+					{
+						bounced = true;
+					}
+
+					if (this.y > player.y - 70)
+					{
+						// THE ALIENS HAVE SLIPPED PAST THE PLAYER, SO THEY LOSE
+
+						endGame();
+					}
+				}
+
+				createjs.Ticker.addListener(alien);
+			}
+		}
+	}
+
+	function endGame()
+	{
+		clearAliens();
+		messagefield.text = ("GAME OVER\n\n");
+		messagefield.text += ("Click to restart");
+		container.addChild(messagefield);
+		stage.update();
+		canvas.onclick = function()
+		{
+			canvas.onclick = null;
+			container.removeChild(messagefield);
+			createjs.Ticker.setPaused(false);
+			player.y = 440;
+			player.x = 240;
+			stage.update()
+			createWave();
+			score = 0;
+			lives = 3;
+		}
+		createjs.Ticker.setPaused(true);
+	}
+
+	// CREATE AND ADD AN ALIEN BULLET
+
+	function addAlienBullet(alien)
+	{
+		var alienBullet = new createjs.Container();
+
+		var bulletBitmap = new createjs.Bitmap();
+		bulletBitmap.x = -15;
+		bulletBitmap.y = - 15;
+		bulletBitmap.image = assets.enemy_bullet;
+
+		alienBullet.addChild(bulletBitmap);
+		alienBullet.scaleX = alienBullet.scaleY = 0.5;
+
+		container.addChild(alienBullet);
+		alienBullet.x = alien.x + 20;
+		alienBullet.y = alien.y + 20;
+		createjs.Ticker.addListener(alienBullet); // AUTOMAGICALLY CALLS THE .tick FUNCTION OF AN OBJECT 30 TIMES A SECOND
+
+		createjs.Sound.play("enemy_shoot");
+
+		// EACH ALIEN BULLET'S VERY OWN TICK FUNCTION
+		alienBullet.tick = function() {
+			this.y += 7; // MOVE DOWN THE SCREEN
+
+			if (this.y > 480)
+			{
+				// REMOVE IF OFF BOTTOM OF STAGE
+
+				container.removeChild(this);
+				createjs.Ticker.removeListener(this);
+			}
+
+			var hit = false;
+
+			var dx = this.x - (player.x + 12);
+			var dy = this.y - (player.y + 12);
+			var hyp2 = (dx * dx) + (dy * dy);
+
+			if (hyp2 < 25 * 25)
+			{
+				hit = true;
+			}
+
+			if (hit)
+			{
+				container.removeChild(this);
+				createjs.Ticker.removeListener(this);
+				lives = lives - 1;
+				createjs.Sound.play("player_hit");
+			}
+		}
+	}
+
+	// CLEAR THE STAGE OF ALIENS
+	function clearAliens()
+	{
+		for (var i = 0; i < aliens.length; i++)
+		{
+			var alien = aliens[i];
+			container.removeChild(alien);
+
+			createjs.Ticker.removeListener(alien);
+		}
+
+		aliens = [];
+	}
+
+	function addBullet()
+	{
+		if (reloadedTicks < 8) return;
+
+		createjs.Sound.play("player_shoot");
+
+		reloadedTicks = 0;
+
+		// CREATE THE BULLET
+		var bullet = new createjs.Container();
+		var bulletBitmap = new createjs.Bitmap();
+		bulletBitmap.x = -15;
+		bulletBitmap.y = - 15;
+		bullet.addChild(bulletBitmap);
+
+		bullet.scaleX = bullet.scaleY = 0.5;
+		bulletBitmap.image = assets.player_bullet;
+
+		container.addChild(bullet);
+		bullet.x = player.x;
+		bullet.y = player.y - 30;
+		createjs.Ticker.addListener(bullet);
+
+		// EACH BULLET'S VERY OWN TICK FUNCTION
+		bullet.tick = function() {
+
+			this.y -= 7; // MOVE UP SCREEN
+
+			// SEE IF WE'VE GONE OFF THE TOP OF THE SCREEN
+			if (this.y < 0)
+			{
+				container.removeChild(this);
+				createjs.Ticker.removeListener(this);
+			}
+
+			// SEE IF WE'VE HIT AN ALIEN
+			for (var i = 0; i < aliens.length; i++)
+			{
+				var alien = aliens[i];
+
+				var hit = false;
+
+				var dx = this.x - (alien.x + 12);
+				var dy = this.y - (alien.y + 12);
+				var hyp2 = (dx * dx) + (dy * dy);
+
+				if (hyp2 < 25 * 25)
+				{
+					hit = true;
+				}
+
+				if (hit)
+				{
+					// WE'VE HIT ONE! REMOVE BULLET AND ALIEN
+
+					container.removeChild(this);
+					createjs.Ticker.removeListener(this);
+
+					container.removeChild(alien);
+					createjs.Ticker.removeListener(alien);
+
+					// REMOVE THIS ALIEN FROM THE ALIENS ARRAY
+					aliens.splice(aliens.indexOf(alien), 1);
+
+					createjs.Sound.play("enemy_hit");
+
+					score = score + 5;
+
+					break;
+				}
+			}
+		}
+	}
+
+	function init() {
+		manifest = [
+			{src:"images/background.png", id:"background"},
+			{src:"images/enemy.png", id:"enemy1"},
+			{src:"images/enemy2.png", id:"enemy2"},
+			{src:"images/enemy_bullet.png", id:"enemy_bullet"},
+			{src:"images/player.png", id:"player"},
+			{src:"images/player_bullet.png", id:"player_bullet"},
+			{src:"images/button.png", id:"left"},
+			{src:"images/fire_button.png", id:"fire"},
+			{src:"sounds/enemy_hit.wav", id:"enemy_hit"},
+			{src:"sounds/enemy_shoot.wav", id:"enemy_shoot"},
+			{src:"sounds/player_hit.wav", id:"player_hit"},
+			{src:"sounds/player_shoot.wav", id:"player_shoot"},
+			{src:"sounds/music.wav", id:"music"}
+		];
+
+		loader = new createjs.LoadQueue();
+		loader.installPlugin(createjs.Sound);
+		loader.addEventListener("fileload", onFileLoad);
+		loader.addEventListener("complete", onComplete);
+		loader.loadManifest(manifest);
+		stage.autoClear = false;
+	}
+
+	function onFileLoad(event)
+	{
+		console.log("onFileLoad");
+
+		for (var thing in event)
+		{
+			console.log(thing + ":" + event[thing]);
+		}
+
+
+		assets[event.item.id] = event.result;
+	}
+
+	function onComplete() {
+
+		console.log("onComplete");
+
+		createjs.Sound.setVolume(0.4);
+		createjs.Sound.play("music");
+
+		mainMenu();
+	}
+
+	// WAIT UNTIL JQUERY TELLS US THE PAGE IS READY
+	$(document).ready(function(e) {
+
+			// PREVENTS DRAGGING ON MOBILE
+			window.ontouchmove = function(e){ preventDefault(); }
+
+			// CREATE THE STAGE, PASSING REFERENCE TO OUR CANVAS ELEMENT
+			canvas = document.getElementById('canvas');
+			stage = new createjs.Stage(canvas);
+
+			// ENABLE MULTITOUCH IN CREATEJS - IMPORTANT!!!
+			createjs.Touch.enable(stage);
+
+			init();
+	});
+
+</script>
+
+</head>
+
+<body>
+
+<!-- WE NEED A CANVAS IN THE BODY TO PUT OUR GAME INTO -->
+<canvas id="canvas" width="500px" height="500px">
+
+</canvas>
+
+</body>
+</html>
